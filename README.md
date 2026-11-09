@@ -139,7 +139,7 @@ biased towards large, active neurons. Kilosort4 on the same data: to be measured
 **IBL, `sub-NR-0031_ses-caa5dddc`, Probe01** (10 min, NP 1.0, ephys-prep defaults; drift 8.9 µm, below the threshold, so not
 interpolated): **Lupin (cpu) found 686 units** (2.72 M spikes, median 2.7 Hz) in the workflow repo's
 `data/work/ibl/spike-sort/`. Against IBL's own sorting of the same probe and window (processed NWB units table,
-`scripts/compare_reference.py`, 0.4 ms matching): **48 of IBL's 70 best units** (`ibl_quality_score` = 1) have a
+`scripts/compare_reference.py`, 0.4 ms matching): **48 of IBL's 70 best units** (`ibl_quality_score` = 1, ≥ 10 spikes in the window; 83 have ≥ 1) have a
 Lupin unit with agreement ≥ 0.8 (55 with ≥ 0.5, median agreement 0.97); over all 534 IBL units active in the
 window, 105 match at ≥ 0.8 and 178 at ≥ 0.5. IBL's sorting is itself a (pyKilosort) sorting, not ground truth.
 Kilosort4 (gpu) on the same data: to be measured on the dev compute node.
