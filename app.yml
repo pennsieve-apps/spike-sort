@@ -1,0 +1,146 @@
+# yaml-language-server: $schema=https://schemas.pennsieve.io/app-manifest/v1.json
+schemaVersion: "1.0"
+application:
+  name: spike-sort
+  description: >-
+    Spike sorting of preprocessed extracellular recordings (ephys-prep output, or any
+    SpikeInterface recording folder) with SpikeInterface. The gpu variant (default) runs
+    Kilosort4 (Pachitariu et al. 2024) on an NVIDIA GPU with the AIND pipeline's parameters and
+    Kilosort's own drift correction; the cpu variant runs SpikeInterface's Lupin (Garcia et al.
+    2026) or SpykingCircus2 on CPUs. Drift is corrected exactly once: by the sorter, unless
+    ephys-prep already applied motion correction. Writes the sorting (spike times in samples of
+    the recording), the sorter's own output (Kilosort4's is Phy-compatible), sort.json and a
+    units figure. GPL-3.0 (Kilosort4 runs in-process).
+  type: processor
+  tags:
+    - neuroscience
+    - electrophysiology
+    - neuropixels
+    - spike-sorting
+    - kilosort
+    - spikeinterface
+    - gpu
+    - deep-learning
+runtime:
+  # Shared by both variants; these are the cpu variant's values (see README "Runtime").
+  cpu: 8192
+  memory: 16384
+  computeTypes:
+    - standard
+  timeoutSeconds: 43200
+parameters:
+  - name: SORTER
+    type: string
+    description: >-
+      kilosort4 (gpu variant only; needs an NVIDIA GPU), lupin (SpikeInterface's sorter, the best
+      CPU choice in Garcia et al. 2026) or spykingcircus2 (CPU, slower).
+    defaultValue: lupin
+    validValues: [kilosort4, lupin, spykingcircus2]
+  - name: DRIFT_CORRECTION
+    type: string
+    description: >-
+      auto: the sorter corrects drift unless ephys-prep already applied motion correction
+      (session.json motion_corrected) or the probe has fewer than 96 channels (AIND rule); on /
+      off to force (never twice: with motion_corrected it stays off).
+    defaultValue: auto
+    validValues: [auto, "on", "off"]
+  - name: KS_BATCH_SIZE
+    type: integer
+    description: Kilosort4 batch size in samples (60000 = 2 s at 30 kHz). Halve it if a smaller GPU runs out of memory.
+    defaultValue: 60000
+    min: 1000
+  - name: KS_NBLOCKS
+    type: integer
+    description: Kilosort4 drift-correction blocks along the probe when drift correction is on (AIND 5; 1 = rigid).
+    defaultValue: 5
+    min: 0
+  - name: KS_TH_UNIVERSAL
+    type: number
+    description: Kilosort4 detection threshold with universal templates (AIND 9).
+    defaultValue: 9
+  - name: KS_TH_LEARNED
+    type: number
+    description: Kilosort4 detection threshold with learned templates (AIND 8).
+    defaultValue: 8
+  - name: KS_CLEAR_CACHE
+    type: boolean
+    description: Free PyTorch's GPU memory cache between steps (slower; for out-of-memory errors on long recordings).
+    defaultValue: false
+  - name: DETECT_THRESHOLD
+    type: number
+    description: Lupin / SpykingCircus2 detection threshold, in multiples of the noise (MAD).
+    defaultValue: 5
+  - name: THREADS
+    type: integer
+    description: CPU worker processes; 0 = one per CPU of the container's quota.
+    defaultValue: 0
+    min: 0
+  - name: SEED
+    type: integer
+    description: Seed for the sorter's random steps (Kilosort4 cluster_init_seed, Lupin / SC2 seed, torch, numpy).
+    defaultValue: 42
+inputs:
+  - name: recording
+    description: >-
+      ephys-prep's output: <session_id>/session.json + <session_id>/recording/ (SpikeInterface
+      binary_folder with probe and times), found anywhere below; or any SpikeInterface recording
+      folder (preprocessed, with channel locations).
+    mediaTypes:
+      - application/octet-stream
+      - application/json
+    required: true
+outputs:
+  - name: sorting
+    description: >-
+      spike-sort/<session_id>/sorting/ (SpikeInterface numpy_folder; spike times in samples of the
+      ephys-prep recording), spike-sort/<session_id>/sorter_output/ (the sorter's own output;
+      Kilosort4: Phy-compatible, minus temporary files), spike-sort/<session_id>/sort.json (sorter,
+      version, parameters, n_units, wall time, drift correction, GPU name and peak VRAM),
+      spike-sort/<session_id>/kilosort_motion/ (Kilosort4's drift estimate as a SpikeInterface
+      Motion), <session_id>_units.png; spike-sort/summary.json, provenance.json.
+    mediaTypes:
+      - application/octet-stream
+      - application/json
+      - image/png
+variants:
+  - id: gpu
+    name: GPU (Kilosort4)
+    default: true
+    description: >-
+      Kilosort4 4.1.7 on an NVIDIA GPU (T4 16 GB or larger; CUDA 12.6 PyTorch). Exits with code 3
+      and a message when no GPU is visible.
+    build:
+      args:
+        TORCH_FLAVOUR: cuda
+    runtime:
+      computeTypes: [gpu]
+      memory: 30720
+      timeoutSeconds: 21600
+    parameters:
+      SORTER:
+        defaultValue: kilosort4
+  - id: cpu
+    name: CPU (Lupin)
+    description: >-
+      SpikeInterface's Lupin (or SpykingCircus2) on CPUs, no GPU needed; slower (several times
+      real time on 8 vCPU for a Neuropixels probe).
+    build:
+      args:
+        TORCH_FLAVOUR: cpu
+    runtime:
+      computeTypes: [standard]
+    parameters:
+      SORTER:
+        validValues: [lupin, spykingcircus2]
+
+# How a release is tested before it is made public: the inputs a review run uses.
+# See app-deploy-service docs/app-manifest-review.md. The generator needs numpy only; it writes
+# a small ephys-prep output (SpikeInterface binary folder) with planted units.
+review:
+  version: 1
+  generate:
+    command: python -m tests.make_fixture "$REVIEW_INPUT_DIR"
+    root: input
+  # The review run has no GPU: sort the fixture with Lupin (in both images).
+  parameters:
+    SORTER: lupin
