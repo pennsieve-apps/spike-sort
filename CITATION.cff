@@ -46,7 +46,7 @@ references:
   doi: 10.1038/s41592-024-02232-7
   identifiers:
   - type: other
-    value: pmid:38589517
+    value: '38589517'
     description: PubMed ID
 - type: article
   title: SpikeInterface, a unified framework for spike sorting
@@ -78,7 +78,7 @@ references:
   doi: 10.7554/elife.61834
   identifiers:
   - type: other
-    value: pmid:33170122
+    value: '33170122'
     description: PubMed ID
 - type: article
   title: Opening the black box toward a modular approach to spike sorting
@@ -111,7 +111,7 @@ references:
   doi: 10.7554/elife.110588
   identifiers:
   - type: other
-    value: pmid:42789325
+    value: '42789325'
     description: PubMed ID
 - type: article
   title: A spike sorting toolbox for up to thousands of electrodes validated with ground truth recordings in vitro and in
@@ -152,7 +152,7 @@ references:
   doi: 10.7554/elife.34518
   identifiers:
   - type: other
-    value: pmid:29557782
+    value: '29557782'
     description: PubMed ID
 - type: article
   title: Efficient and reproducible pipelines for spike sorting large-scale electrophysiology data
@@ -179,7 +179,7 @@ references:
   doi: 10.7554/elife.110170
   identifiers:
   - type: other
-    value: pmid:42554034
+    value: '42554034'
     description: PubMed ID
 - type: article
   title: 'DREDge: robust motion correction for high-density extracellular recordings across species'
@@ -293,7 +293,7 @@ references:
   doi: 10.1038/s41592-025-02614-5
   identifiers:
   - type: other
-    value: pmid:40050699
+    value: '40050699'
     description: PubMed ID
 - type: article
   title: A Modular Implementation to Handle and Benchmark Drift Correction for High-Density Extracellular Recordings
@@ -320,7 +320,7 @@ references:
   doi: 10.1523/eneuro.0229-23.2023
   identifiers:
   - type: other
-    value: pmid:38238082
+    value: '38238082'
     description: PubMed ID
 - type: data
   title: IBL - Brain Wide Map
@@ -454,7 +454,7 @@ references:
   doi: 10.1038/s41586-025-09235-0
   identifiers:
   - type: other
-    value: pmid:40903598
+    value: '40903598'
     description: PubMed ID
   notes: Authored by the International Brain Laboratory consortium. Author list as in PubMed (PMID 40903598); Crossref's record
     repeats part of the list, which CITATION.cff cannot hold (authors must be unique).

@@ -38,6 +38,7 @@ SORTERS = ("kilosort4", "lupin", "spykingcircus2")
 DEFAULTS = {
     "SORTER": "",                 # empty: kilosort4 in the gpu image, lupin in the cpu image
     "DRIFT_CORRECTION": "auto",
+    "MOTION_THRESHOLD_UM": "10",
     "KS_BATCH_SIZE": "60000",
     "KS_NBLOCKS": "5",
     "KS_TH_UNIVERSAL": "9",
@@ -78,7 +79,7 @@ def read_parameters(env=os.environ) -> dict:
     try:
         for k in ("KS_BATCH_SIZE", "KS_NBLOCKS", "THREADS", "SEED"):
             p[k] = int(raw[k])
-        for k in ("KS_TH_UNIVERSAL", "KS_TH_LEARNED", "DETECT_THRESHOLD"):
+        for k in ("KS_TH_UNIVERSAL", "KS_TH_LEARNED", "DETECT_THRESHOLD", "MOTION_THRESHOLD_UM"):
             p[k] = float(raw[k])
     except ValueError as exc:
         raise ParameterError(f"bad numeric parameter: {exc}") from exc
@@ -207,14 +208,36 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
     if not rec.has_probe():
         raise RuntimeError("the recording has no probe / channel locations (sorters need them)")
     motion_corrected = bool(meta.get("motion_corrected", False))
-    drift_on, why = S.drift_decision(p["DRIFT_CORRECTION"], motion_corrected, n_ch)
-    if p["DRIFT_CORRECTION"] == "on" and motion_corrected:
-        log.warning("session %s: %s", sid, why)
+    # Session-clock times stay in the main process: worker processes get the recording without its time vector
+    # (8 bytes per sample, copied into every worker otherwise). Spike times are sample indices anyway.
+    times = np.asarray(rec.get_times(), dtype="float64") if rec.has_time_vector() else None
+    if times is not None:
+        rec.reset_times()
+    t_rec0 = rec.get_start_time()
+    to_time = (lambda i: times[np.clip(np.asarray(i, dtype=np.int64), 0, len(times) - 1)]) if times is not None else \
+        (lambda i: rec.sample_index_to_time(np.asarray(i)))
     sorter = p["SORTER"]
-    params = S.sorter_params(sorter, p, drift_on, p["SEED"])
-    log.info("session %s: %s on %d channels, %.1f s at %.0f Hz (t = %.3f .. %.3f s); drift correction by the sorter: %s (%s)", sid, sorter,
-             n_ch, rec.get_total_duration(), rec.get_sampling_frequency(), rec.get_start_time(), rec.get_end_time(),
-             "on" if drift_on else "off", why)
+    motion_dir = item["dir"] / "motion"
+    plan = S.drift_plan(sorter, p["DRIFT_CORRECTION"], meta, n_ch, p["MOTION_THRESHOLD_UM"], motion_dir.is_dir())
+    if p["DRIFT_CORRECTION"] == "on" and motion_corrected:
+        log.warning("session %s: %s", sid, plan["reason"])
+    params = S.sorter_params(sorter, p, plan["sorter_corrects"], p["SEED"])
+    rec_sort = rec
+    if plan["interpolate"]:
+        import spikeinterface.preprocessing as spre
+        from spikeinterface.core import Motion
+        from spikeinterface.sortingcomponents.motion import interpolate_motion
+
+        m = Motion.load(motion_dir)
+        if times is not None:      # the motion's bins are on the session clock: back to this recording's sample clock
+            fs = rec.get_sampling_frequency()
+            m = Motion(displacement=m.displacement, spatial_bins_um=m.spatial_bins_um, direction=m.direction,
+                       temporal_bins_s=[t_rec0 + np.interp(np.asarray(tb), times, np.arange(len(times))) / fs for tb in m.temporal_bins_s])
+        rec_sort = interpolate_motion(spre.astype(rec, "float32"), m, border_mode="force_extrapolate", spatial_interpolation_method="kriging",
+                                      sigma_um=20.0, p=2, dtype="float32")
+    log.info("session %s: %s on %d channels, %.1f s at %.0f Hz (t = %.3f .. %.3f s on the session clock); drift: %s", sid, sorter,
+             n_ch, rec.get_total_duration(), rec.get_sampling_frequency(), float(to_time(0)), float(to_time(rec.get_num_samples() - 1)),
+             plan["reason"])
 
     if gpu and sorter == "kilosort4":
         import torch
@@ -225,7 +248,7 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
     run_dir = sdir / "_run"
     t0 = time.monotonic()
     with C.Heartbeat(f"{sid}: {sorter} sorting", extra=_vram_now if sorter == "kilosort4" else None):
-        sorting = ss.run_sorter(sorter, rec, folder=run_dir, remove_existing_folder=True, delete_output_folder=False,
+        sorting = ss.run_sorter(sorter, rec_sort, folder=run_dir, remove_existing_folder=True, delete_output_folder=False,
                                 verbose=True, raise_error=True, **({} if sorter == "kilosort4" else {"job_kwargs": job_kwargs}), **params)
     wall = time.monotonic() - t0
     peak_vram = None
@@ -246,12 +269,12 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
     counts = sorting.count_num_spikes_per_unit(outputs="array") if n_units else np.array([])
     sorting.save(folder=sdir / "sorting", format="numpy_folder", overwrite=True)
 
-    motion_ks = _collect_sorter_output(run_dir, sdir / "sorter_output", sorter, rec, item)
+    motion_ks = _collect_sorter_output(run_dir, sdir / "sorter_output", sorter, rec, item, to_time)
     shutil.rmtree(run_dir, ignore_errors=True)
 
     figs = []
     if n_units:
-        cap, stats = F.units_figure(sdir / f"{sid}_units.png", sid, rec, sorting, sorter)
+        cap, stats = F.units_figure(sdir / f"{sid}_units.png", sid, rec, sorting, sorter, to_time)
         figs.append({"path": f"{sid}/{sid}_units.png", "caption": cap})
     else:
         stats = {}
@@ -268,14 +291,17 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
         "sorter_version": str(sorter_version),
         "spikeinterface": version("spikeinterface"),
         "parameters": params,
-        "drift_correction": {"by_sorter": drift_on, "reason": why, "ephys_prep_motion_corrected": motion_corrected},
+        "drift_correction": {"by_sorter": plan["sorter_corrects"], "interpolated_with_ephys_prep_motion": plan["interpolate"],
+                             "reason": plan["reason"], "threshold_um": p["MOTION_THRESHOLD_UM"],
+                             "ephys_prep_max_drift_range_um": (meta.get("motion") or {}).get("max_drift_range_um"),
+                             "ephys_prep_motion_corrected": motion_corrected},
         "n_units": n_units,
         "n_units_before_cleaning": n_raw,
         "n_spikes": int(counts.sum()) if n_units else 0,
         "median_firing_rate_hz": float(np.median(counts / dur)) if n_units else None,
         "n_channels": n_ch,
         "sampling_frequency": rec.get_sampling_frequency(),
-        "t_start": float(rec.get_start_time()),
+        "t_start": float(to_time(0)),
         "duration_s": dur,
         "spike_times": "samples of the ephys-prep recording (sorting/); seconds = recording times at those samples",
         "wall_seconds": round(wall, 1),
@@ -320,7 +346,7 @@ def _log_sorter_trace(run_dir: Path):
 KS_TEMP = {"temp_wh.dat", "recording.dat"}
 
 
-def _collect_sorter_output(run_dir: Path, dest: Path, sorter: str, rec, item) -> bool:
+def _collect_sorter_output(run_dir: Path, dest: Path, sorter: str, rec, item, to_time) -> bool:
     """Keep the sorter's own folder (Kilosort4: Phy-compatible) minus big temporary files; Kilosort4's drift as a Motion."""
     src = run_dir / "sorter_output"
     dest.mkdir(parents=True, exist_ok=True)
@@ -348,7 +374,7 @@ def _collect_sorter_output(run_dir: Path, dest: Path, sorter: str, rec, item) ->
             if yblk is not None and dshift is not None and np.size(dshift):
                 dshift = np.asarray(dshift)
                 tb = ops["batch_size"] / ops["fs"]
-                t0, t1 = rec.get_start_time(), rec.get_end_time()
+                t0, t1 = float(to_time(0)), float(to_time(rec.get_num_samples() - 1))
                 bins = np.linspace(t0 + tb / 2, t1 - tb / 2, dshift.shape[0])
                 Motion(displacement=dshift, temporal_bins_s=bins, spatial_bins_um=np.asarray(yblk)).save(dest.parent / "kilosort_motion")
                 saved = True
@@ -373,8 +399,7 @@ def main() -> int:
         log.error("%s", exc)
         return 2
     threads = C.set_thread_env(p["THREADS"])
-    for var, default in (("MPLCONFIGDIR", "/tmp/matplotlib"), ("NUMBA_CACHE_DIR", "/tmp/numba")):
-        os.environ.setdefault(var, default)
+    C.setup_writable_dirs()
     code, msg, gpu = gpu_check(p["SORTER"])
     if code:
         log.error("%s", msg)
@@ -386,7 +411,7 @@ def main() -> int:
 
     # spawn: worker processes start clean (forking after torch / OpenMP has run, e.g. in the sorter's own drift
     # correction, can crash or hang); the recordings are folders on disk, so workers re-open them cheaply.
-    job_kwargs = {"n_jobs": threads, "chunk_duration": "1s", "progress_bar": False, "mp_context": "spawn"}
+    job_kwargs = {"n_jobs": C.worker_count(threads), "chunk_duration": "1s", "progress_bar": False, "mp_context": "spawn"}
     sc.set_global_job_kwargs(**job_kwargs)
     logging.getLogger("kilosort").setLevel(logging.INFO)
     logging.getLogger("kilosort").propagate = False     # Kilosort4 prints its progress with its own handler
@@ -424,6 +449,7 @@ def main() -> int:
         return {"status": "ok", "sorter": s["sorter"], "sorter_version": s["sorter_version"], "n_units": s["n_units"], "n_spikes": s["n_spikes"],
                 "median_firing_rate_hz": s["median_firing_rate_hz"], "duration_s": s["duration_s"], "wall_seconds": s["wall_seconds"],
                 "realtime_factor": s["realtime_factor"], "drift_correction_by_sorter": s["drift_correction"]["by_sorter"],
+                "drift_interpolated": s["drift_correction"]["interpolated_with_ephys_prep_motion"], "drift_decision": s["drift_correction"]["reason"],
                 "gpu": (s["gpu"] or {}).get("name"), "peak_vram_mb": (s["gpu"] or {}).get("peak_vram_mb"), **r.get("stats", {}),
                 **s.get("sheet", {})}
 

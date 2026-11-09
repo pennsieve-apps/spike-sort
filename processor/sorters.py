@@ -88,19 +88,35 @@ SORTER_DOIS = {
 }
 
 
-def drift_decision(mode: str, motion_corrected: bool, n_channels: int) -> tuple[bool, str]:
-    """Should the sorter correct drift? Returns (on, why)."""
-    if motion_corrected:
-        if mode == "on":
-            return False, "ephys-prep already applied motion correction (session.json motion_corrected); not corrected twice"
-        return False, "ephys-prep already applied motion correction"
+def drift_plan(sorter: str, mode: str, meta: dict, n_channels: int, threshold_um: float, has_motion: bool) -> dict:
+    """How drift is corrected for this session, exactly once. Returns {"sorter_corrects", "interpolate", "reason"}.
+
+    - ephys-prep already interpolated (session.json motion_corrected): nothing more.
+    - Kilosort4: its own correction (nblocks) unless DRIFT_CORRECTION=off or < 96 channels (AIND). It does not use
+      ephys-prep's estimate, and no threshold applies: KS4 is built around its drift correction.
+    - Lupin / SpykingCircus2 (Garcia et al. 2026): interpolate the recording with ephys-prep's DREDge motion when
+      its largest drift range exceeds MOTION_THRESHOLD_UM (~10 um); below that, interpolation costs more than it
+      gains, so no correction. Without an ephys-prep motion estimate, the sorter's own DREDge correction (>= 96 ch).
+    """
+    off = {"sorter_corrects": False, "interpolate": False}
+    if meta.get("motion_corrected"):
+        return {**off, "reason": "ephys-prep already interpolated the recording (motion_corrected); not corrected twice"}
     if mode == "off":
-        return False, "DRIFT_CORRECTION=off"
-    if mode == "on":
-        return True, "DRIFT_CORRECTION=on"
-    if n_channels < MIN_DRIFT_CHANNELS:
-        return False, f"{n_channels} channels < {MIN_DRIFT_CHANNELS} (too few to estimate drift, as in the AIND pipeline)"
-    return True, "ephys-prep estimated but did not apply motion: the sorter corrects drift"
+        return {**off, "reason": "DRIFT_CORRECTION=off"}
+    drift = (meta.get("motion") or {}).get("max_drift_range_um")
+    if sorter == "kilosort4":
+        if mode == "auto" and n_channels < MIN_DRIFT_CHANNELS:
+            return {**off, "reason": f"{n_channels} channels < {MIN_DRIFT_CHANNELS}: too few to estimate drift (AIND rule)"}
+        return {"sorter_corrects": True, "interpolate": False, "reason": "Kilosort4's own drift correction (nblocks)"}
+    if has_motion and drift is not None:
+        if mode == "on" or drift > threshold_um:
+            return {"sorter_corrects": False, "interpolate": True,
+                    "reason": f"interpolated with ephys-prep's DREDge motion (largest drift range {drift:.1f} um"
+                              + (f" > MOTION_THRESHOLD_UM={threshold_um:g})" if drift > threshold_um else "; DRIFT_CORRECTION=on)")}
+        return {**off, "reason": f"largest drift range {drift:.1f} um <= MOTION_THRESHOLD_UM={threshold_um:g}: not worth interpolating"}
+    if mode == "auto" and n_channels < MIN_DRIFT_CHANNELS:
+        return {**off, "reason": f"no ephys-prep motion estimate and {n_channels} channels < {MIN_DRIFT_CHANNELS}"}
+    return {"sorter_corrects": True, "interpolate": False, "reason": "no ephys-prep motion estimate: the sorter's own DREDge correction"}
 
 
 def sorter_params(sorter: str, p: dict, drift_on: bool, seed: int) -> dict:

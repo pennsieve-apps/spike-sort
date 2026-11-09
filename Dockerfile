@@ -21,19 +21,17 @@ COPY processor/ /processor/processor/
 COPY VERSION LICENSE THIRD_PARTY.md /processor/
 COPY licenses/ /processor/licenses/
 
+# Lambda-safe: no cache paths here (HOME and /tmp are replaced at run time); processor.common.setup_writable_dirs
+# points matplotlib / numba / triton caches at $TMPDIR at startup. USER: getpass with an arbitrary uid.
 ENV PYTHONPATH="/processor" \
     PYTHONUNBUFFERED=1 \
-    HOME=/tmp \
     MPLBACKEND=Agg \
-    MPLCONFIGDIR=/tmp/matplotlib \
-    NUMBA_CACHE_DIR=/tmp/numba \
-    XDG_CACHE_HOME=/tmp/cache \
+    USER=app \
     TORCH_FLAVOUR=${TORCH_FLAVOUR}
 
 RUN python -c "import matplotlib.pyplot, spikeinterface.full, spikeinterface.sorters as ss, torch; \
 assert ss.sorter_dict['lupin'].is_installed() and ss.sorter_dict['spykingcircus2'].is_installed(); \
-import os; os.environ['TORCH_FLAVOUR'] == 'cuda' and __import__('kilosort')" \
-    && mkdir -p /tmp/matplotlib /tmp/numba /tmp/cache && chmod -R a+rwX /tmp/matplotlib /tmp/numba /tmp/cache
+import os; os.environ['TORCH_FLAVOUR'] == 'cuda' and __import__('kilosort')"
 
 RUN useradd --uid 1000 --no-create-home --home-dir /tmp --shell /usr/sbin/nologin processor
 USER 1000

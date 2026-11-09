@@ -33,9 +33,12 @@ GPL too (see [Licences](#licences)).
 | Variant | Sorter | Compute | When |
 |---|---|---|---|
 | `gpu` (default) | Kilosort4 4.1.7 (PyTorch 2.14.1, CUDA 12.6) | NVIDIA GPU (T4 16 GB or larger) | The standard choice for Neuropixels: fast and accurate. Without a visible GPU it exits with code 3 and says to use the `cpu` variant (Kilosort4 on a CPU is "only for testing", per its authors). |
-| `cpu` | Lupin (default) or SpykingCircus2 (`SORTER`) | standard (CPU) | No GPU available, or a second opinion. **Lupin** is SpikeInterface's own modular sorter, which Garcia et al. 2026 report as faster and more accurate than Kilosort4 on their simulated recordings (SpykingCircus2 was accurate but slower); SpykingCircus2 is offered because its matching (circus-omp) differs from Lupin's and it has a longer track record. MountainSort5 is not offered: it has no drift correction. |
+| `cpu` | Lupin (default) or SpykingCircus2 (`SORTER`) | standard (CPU) | No GPU available, or a second opinion. **Lupin** is SpikeInterface's own modular sorter; in its authors' benchmarks (Garcia et al. 2026: simulated recordings and proxy metrics) it is comparable to Kilosort4, with fewer false positives. It has not been benchmarked independently yet, so Kilosort4 stays the default. SpykingCircus2 is the second CPU option (accurate but slower in the same benchmarks). MountainSort5 is not offered for Neuropixels: it has no drift correction. |
 
 Both images also contain Lupin and SpykingCircus2, so `SORTER=lupin` works on the gpu image too (on CPU).
+
+**Why Kilosort4 is the default.** It is the reference sorter of the AIND pipeline (Buccino et al. 2026), which
+found more matched units with Kilosort4 than with Kilosort2.5 on hybrid ground truth, and of most Neuropixels labs.
 
 **Kilosort4 on a T4.** With `batch_size=60000` (2 s at 30 kHz) a 384-channel probe uses a few GB of the T4's 16 GB
 (the peak is in clustering and grows with the number of spikes; it is recorded in `sort.json` as
@@ -47,12 +50,18 @@ the dev compute node*.
 
 1. **Input**: `ephys-prep/<session_id>/recording/` (int16, preprocessed: phase shift, 300 Hz high-pass, bad
    channels removed, common median reference) with its `session.json`; or any SpikeInterface recording folder.
-2. **Drift is corrected exactly once.** `DRIFT_CORRECTION=auto` (default): if `session.json` says
-   `motion_corrected: true` (ephys-prep ran with `MOTION_CORRECTION=apply`), the sorter's own correction is off
-   (Kilosort4 `nblocks=0, do_correction=false`; Lupin / SC2 `apply_motion_correction=false`). Otherwise
-   (ephys-prep's default `estimate`) the sorter corrects drift: Kilosort4 with `nblocks=5` (AIND), Lupin and SC2
-   with DREDge (`dredge_fast`). Probes with fewer than 96 channels get no drift correction (AIND's
-   `min_drift_channels`): too few to estimate it.
+2. **Drift is corrected exactly once** (`DRIFT_CORRECTION=auto`, after Garcia et al. 2026 and AIND). ephys-prep
+   always estimates the motion with DREDge and, by default, leaves the data as they are.
+   - **Kilosort4** keeps its own drift correction (`nblocks=5`, AIND), whatever the drift; off with fewer than 96
+     channels (AIND's `min_drift_channels`).
+   - **Lupin / SpykingCircus2**: the recording is interpolated (kriging) with **ephys-prep's DREDge estimate** only
+     when its largest drift range exceeds `MOTION_THRESHOLD_UM` (10 µm); below that, interpolation costs more
+     accuracy than it recovers, so nothing is corrected. The sorter's own correction is off (no re-estimation).
+     Without an ephys-prep estimate (a bare recording folder), the sorter's own DREDge correction is used (≥ 96
+     channels).
+   - If ephys-prep already interpolated (`session.json` `motion_corrected: true`), nothing is corrected
+     (Kilosort4 `nblocks=0, do_correction=false`).
+   `sort.json` and `summary.json` record the decision and why.
 3. **Kilosort4** (AIND `default_params.json`, v1.5.0): `batch_size 60000, nblocks 5, Th_universal 9, Th_learned 8,
    dminx 32, whitening_range 32, highpass_cutoff 300, do_CAR true, nt 61, nskip 25, binning_depth 5, sig_interp 20,
    drift_smoothing [0.5, 0.5, 0.5], min_template_size 10, template_sizes 5, nearest_chans 10, nearest_templates 100,
@@ -82,7 +91,8 @@ the dev compute node*.
 | Parameter | Type | Default | What it does |
 |---|---|---|---|
 | `SORTER` | string | `kilosort4` (gpu) / `lupin` (cpu) | `kilosort4` (gpu variant only), `lupin`, `spykingcircus2`. |
-| `DRIFT_CORRECTION` | string | `auto` | `auto` (see Method 2), `on`, `off`. Never on when ephys-prep already applied motion correction. |
+| `DRIFT_CORRECTION` | string | `auto` | `auto` (see Method 2), `on` (CPU sorters: interpolate whatever the drift), `off`. Never twice. |
+| `MOTION_THRESHOLD_UM` | number | `10` | CPU sorters: interpolate with ephys-prep's motion only above this drift (µm). Not used by Kilosort4. |
 | `KS_BATCH_SIZE` | integer | `60000` | Kilosort4 batch (samples). Lower for GPU memory. |
 | `KS_NBLOCKS` | integer | `5` | Kilosort4 non-rigid drift blocks when drift correction is on (`1` = rigid). |
 | `KS_TH_UNIVERSAL` | number | `9` | Kilosort4 threshold, universal templates. |
@@ -102,7 +112,7 @@ the cpu image)**.
 | `<session_id>/sorting/` | SpikeInterface `numpy_folder` (`spikeinterface.load`): `spikes.npy` (sample_index, unit_index, segment_index), unit ids, sampling frequency. |
 | `<session_id>/sorter_output/` | Kilosort4: its Phy-compatible output (`spike_times.npy`, `spike_clusters.npy`, `templates.npy`, `amplitudes.npy`, `pc_features.npy`, `cluster_KSLabel.tsv`, `cluster_ContamPct.tsv`, `ops.npy`, `kilosort4.log`, `diagnostics.png`, `params.py` with `dat_path` set to the ephys-prep binary's file name). Lupin / SC2: SpikeInterface's sorter log and parameters. |
 | `<session_id>/kilosort_motion/` | Kilosort4's own drift estimate as a SpikeInterface `Motion` (when it corrected drift). |
-| `<session_id>/sort.json` | `sorter, sorter_version, spikeinterface, parameters` (all, as run), `drift_correction {by_sorter, reason, ephys_prep_motion_corrected}, n_units, n_units_before_cleaning, n_spikes, median_firing_rate_hz, n_channels, sampling_frequency, t_start, duration_s, wall_seconds, realtime_factor, gpu {name, total_vram_mb, peak_vram_mb}`, the session's sheet columns. |
+| `<session_id>/sort.json` | `sorter, sorter_version, spikeinterface, parameters` (all, as run), `drift_correction {by_sorter, interpolated_with_ephys_prep_motion, reason, threshold_um, ephys_prep_max_drift_range_um, ephys_prep_motion_corrected}, n_units, n_units_before_cleaning, n_spikes, median_firing_rate_hz, n_channels, sampling_frequency, t_start, duration_s, wall_seconds, realtime_factor, gpu {name, total_vram_mb, peak_vram_mb}`, the session's sheet columns. |
 | `<session_id>/<session_id>_units.png` | Units by depth and firing rate, and every spike at its unit's depth over time. |
 | `summary.json` | Per session: sorter, units, spikes, firing rate, wall time, real-time factor, GPU and peak VRAM; figures with captions. |
 | `provenance.json` | App and tool versions, variant, parameters, inputs, timings, peak memory and VRAM, citations. |
@@ -137,8 +147,9 @@ RUNTIME
 - Kilosort4 needs a CUDA GPU; on the cpu variant it is not available (exit 3). Kilosort4 results are not
   bit-for-bit reproducible across GPU models.
 - Multi-segment recordings are not supported (ephys-prep writes one segment per session).
-- Lupin and SpykingCircus2 re-estimate drift themselves when correcting it; they don't reuse ephys-prep's motion
-  estimate.
+- Lupin's evidence so far is its authors' own simulations and proxy metrics; treat it as a CPU alternative, and
+  prefer Kilosort4 where a GPU is available.
+- The 10 µm interpolation threshold is a rule of thumb from simulations (Garcia et al. 2026).
 
 ## Licences
 

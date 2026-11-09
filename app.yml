@@ -7,8 +7,9 @@ application:
     SpikeInterface recording folder) with SpikeInterface. The gpu variant (default) runs
     Kilosort4 (Pachitariu et al. 2024) on an NVIDIA GPU with the AIND pipeline's parameters and
     Kilosort's own drift correction; the cpu variant runs SpikeInterface's Lupin (Garcia et al.
-    2026) or SpykingCircus2 on CPUs. Drift is corrected exactly once: by the sorter, unless
-    ephys-prep already applied motion correction. Writes the sorting (spike times in samples of
+    2026) or SpykingCircus2 on CPUs. Drift is corrected exactly once: Kilosort4 by itself; the CPU
+    sorters by interpolating with ephys-prep's DREDge estimate, only when the drift exceeds ~10 um;
+    nothing when ephys-prep already interpolated. Writes the sorting (spike times in samples of
     the recording), the sorter's own output (Kilosort4's is Phy-compatible), sort.json and a
     units figure. GPL-3.0 (Kilosort4 runs in-process).
   type: processor
@@ -32,18 +33,28 @@ parameters:
   - name: SORTER
     type: string
     description: >-
-      kilosort4 (gpu variant only; needs an NVIDIA GPU), lupin (SpikeInterface's sorter, the best
-      CPU choice in Garcia et al. 2026) or spykingcircus2 (CPU, slower).
+      kilosort4 (gpu variant only; needs an NVIDIA GPU), lupin (SpikeInterface's sorter; comparable
+      to Kilosort4 in its authors' benchmarks, with fewer false positives) or spykingcircus2 (CPU,
+      slower).
     defaultValue: lupin
     validValues: [kilosort4, lupin, spykingcircus2]
   - name: DRIFT_CORRECTION
     type: string
     description: >-
-      auto: the sorter corrects drift unless ephys-prep already applied motion correction
-      (session.json motion_corrected) or the probe has fewer than 96 channels (AIND rule); on /
-      off to force (never twice: with motion_corrected it stays off).
+      auto: drift is corrected exactly once. Kilosort4 uses its own correction (nblocks; off with
+      fewer than 96 channels). Lupin / SpykingCircus2: the recording is interpolated with
+      ephys-prep's DREDge estimate when its drift exceeds MOTION_THRESHOLD_UM, else not corrected.
+      Nothing is corrected when ephys-prep already interpolated (motion_corrected). on: always
+      correct (interpolate for CPU sorters); off: never.
     defaultValue: auto
     validValues: [auto, "on", "off"]
+  - name: MOTION_THRESHOLD_UM
+    type: number
+    description: >-
+      CPU sorters: interpolate with ephys-prep's motion only when its largest drift range exceeds
+      this (um; Garcia et al. 2026). Not used by Kilosort4.
+    defaultValue: 10
+    min: 0
   - name: KS_BATCH_SIZE
     type: integer
     description: Kilosort4 batch size in samples (60000 = 2 s at 30 kHz). Halve it if a smaller GPU runs out of memory.

@@ -65,11 +65,17 @@ def test_kilosort_without_gpu_exits_3(monkeypatch, tmp_path):
 
 
 def test_drift_rules():
-    assert S.drift_decision("auto", False, 384)[0] is True
-    assert S.drift_decision("auto", True, 384)[0] is False          # ephys-prep applied it: never twice
-    assert S.drift_decision("on", True, 384)[0] is False
-    assert S.drift_decision("auto", False, 64)[0] is False          # AIND: < 96 channels
-    assert S.drift_decision("on", False, 64)[0] is True
+    plan = S.drift_plan
+    big, small = {"motion": {"max_drift_range_um": 25.0}}, {"motion": {"max_drift_range_um": 4.0}}
+    assert plan("kilosort4", "auto", big, 384, 10, True)["sorter_corrects"] is True          # KS4: its own correction
+    assert plan("kilosort4", "auto", small, 384, 10, True)["sorter_corrects"] is True
+    assert plan("kilosort4", "auto", {"motion_corrected": True}, 384, 10, True)["sorter_corrects"] is False   # never twice
+    assert plan("kilosort4", "auto", big, 64, 10, True)["sorter_corrects"] is False           # AIND: < 96 channels
+    assert plan("lupin", "auto", big, 384, 10, True) == {"sorter_corrects": False, "interpolate": True, "reason": plan("lupin", "auto", big, 384, 10, True)["reason"]}
+    assert plan("lupin", "auto", small, 384, 10, True)["interpolate"] is False               # below the threshold
+    assert plan("lupin", "on", small, 384, 10, True)["interpolate"] is True
+    assert plan("lupin", "auto", {}, 384, 10, False)["sorter_corrects"] is True              # no ephys-prep motion
+    assert plan("lupin", "off", big, 384, 10, True)["interpolate"] is False
     ks = S.sorter_params("kilosort4", {"KS_BATCH_SIZE": 60000, "KS_TH_UNIVERSAL": 9, "KS_TH_LEARNED": 8, "KS_CLEAR_CACHE": False,
                                        "KS_NBLOCKS": 5}, False, 1)
     assert ks["nblocks"] == 0 and ks["do_correction"] is False and ks["batch_size"] == 60000 and ks["Th_universal"] == 9
@@ -99,7 +105,7 @@ def test_lupin_outputs(lupin_run):
     sort = json.loads((sdir / "sort.json").read_text())
     for k in ("sorter", "sorter_version", "parameters", "n_units", "wall_seconds", "gpu", "drift_correction"):
         assert k in sort
-    assert sort["sorter"] == "lupin" and sort["drift_correction"]["by_sorter"] is False   # 64 channels < 96
+    assert sort["sorter"] == "lupin" and sort["drift_correction"]["by_sorter"] is False   # no motion folder, 64 channels < 96
     assert abs(sort["t_start"] - 100.0) < 1e-9
     prov = json.loads((top / "provenance.json").read_text())
     assert set(prov) >= {"app", "version", "variant", "tools", "parameters", "inputs", "started", "finished", "wall_seconds",
@@ -145,3 +151,27 @@ def test_kilosort4_on_cpu_for_testing(monkeypatch, fixture_dir, tmp_path):
     assert sort["parameters"]["nblocks"] == 0 and sort["parameters"]["Th_universal"] == 9
     acc = accuracy(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz", sdir / "sorting")
     assert (acc >= 0.8).sum() >= 9, acc
+
+
+def test_lupin_interpolates_with_ephys_prep_motion(monkeypatch, fixture_dir, tmp_path):
+    """Drift above MOTION_THRESHOLD_UM: the recording is interpolated with ephys-prep's motion before Lupin."""
+    import shutil
+
+    from spikeinterface.core import Motion
+
+    src = fixture_dir / "input" / "ephys-prep" / "sub-fixture_ses-01"
+    dst = tmp_path / "in" / "ephys-prep" / "sub-fixture_ses-01"
+    shutil.copytree(src, dst)
+    bins = np.arange(100.5, 130.0, 1.0)                                    # session clock (t_start = 100 s)
+    disp = -10.0 * (bins - 100.0)[:, None] / 30.0                           # the planted 10 um drift (units move down)
+    Motion(displacement=disp, temporal_bins_s=bins, spatial_bins_um=np.array([300.0])).save(dst / "motion")
+    meta = json.loads((dst / "session.json").read_text())
+    meta["motion"] = {"max_drift_range_um": 10.0}
+    meta["motion_estimated"] = True
+    (dst / "session.json").write_text(json.dumps(meta))
+    assert run(monkeypatch, tmp_path / "in", tmp_path / "out", SORTER="lupin", MOTION_THRESHOLD_UM="5") == 0
+    sdir = tmp_path / "out" / "spike-sort" / "sub-fixture_ses-01"
+    sort = json.loads((sdir / "sort.json").read_text())
+    assert sort["drift_correction"]["interpolated_with_ephys_prep_motion"] is True and sort["drift_correction"]["by_sorter"] is False
+    acc = accuracy(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz", sdir / "sorting")
+    assert (acc >= 0.85).sum() >= 10, acc

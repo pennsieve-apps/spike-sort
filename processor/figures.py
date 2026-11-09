@@ -8,7 +8,7 @@ import numpy as np
 DPI = 150
 
 
-def units_figure(path: Path, sid: str, rec, sorting, sorter: str, max_spikes_per_unit: int = 50, max_points: int = 200_000) -> tuple[str, dict]:
+def units_figure(path: Path, sid: str, rec, sorting, sorter: str, to_time, max_spikes_per_unit: int = 50, max_points: int = 200_000) -> tuple[str, dict]:
     import matplotlib
 
     matplotlib.use("Agg")
@@ -36,7 +36,7 @@ def units_figure(path: Path, sid: str, rec, sorting, sorter: str, max_spikes_per
     sv = sorting.to_spike_vector()
     if len(sv) > max_points:
         sv = sv[np.sort(np.random.default_rng(0).choice(len(sv), max_points, replace=False))]
-    t = rec.sample_index_to_time(sv["sample_index"])
+    t = to_time(sv["sample_index"])
     order = np.argsort(amp[sv["unit_index"]])
     axes[1].scatter(t[order], depth[sv["unit_index"]][order] + np.random.default_rng(1).uniform(-4, 4, len(order)), s=0.5,
                     c=amp[sv["unit_index"]][order], cmap="viridis", alpha=0.5, rasterized=True)
