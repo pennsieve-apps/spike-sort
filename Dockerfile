@@ -35,7 +35,7 @@ ENV PYTHONPATH="/processor" \
     USER=app \
     TORCH_FLAVOUR=${TORCH_FLAVOUR}
 
-RUN python -c "import matplotlib.pyplot, spikeinterface.full, spikeinterface.sorters as ss, torch; \
+RUN python -c "import matplotlib.pyplot, pandas, spikeinterface.full, spikeinterface.extractors.phykilosortextractors, spikeinterface.sorters as ss, torch; \
 assert ss.sorter_dict['lupin'].is_installed() and ss.sorter_dict['spykingcircus2'].is_installed(); \
 import os; os.environ['TORCH_FLAVOUR'] == 'cuda' and __import__('kilosort')"
 

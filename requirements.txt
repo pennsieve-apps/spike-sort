@@ -13,6 +13,8 @@ numba==0.68.1
 scikit-learn==1.9.1
 hdbscan==0.8.44
 matplotlib==3.11.2
+# pandas: SpikeInterface's PhySortingExtractor (reading Kilosort4's output back) imports it lazily; --no-deps hides that
+pandas==3.1.1
 
 # Pinned transitive dependencies
 annotated-types==0.8.0
