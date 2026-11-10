@@ -292,7 +292,9 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
     except Exception:   # noqa: BLE001
         sorter_version = "unknown"
     # duration on the session clock (the timestamps when the recording has them), not samples / nominal rate
+    # span on the session clock (includes pauses kept by ephys-prep) vs time actually recorded (samples / rate)
     dur = float(to_time(rec.get_num_samples() - 1) - to_time(0)) + 1.0 / rec.get_sampling_frequency()
+    recorded = rec.get_num_samples() / rec.get_sampling_frequency()
     sort_json = {
         "session_id": sid,
         "sorter": sorter,
@@ -306,14 +308,15 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
         "n_units": n_units,
         "n_units_before_cleaning": n_raw,
         "n_spikes": int(counts.sum()) if n_units else 0,
-        "median_firing_rate_hz": float(np.median(counts / dur)) if n_units else None,
+        "median_firing_rate_hz": float(np.median(counts / recorded)) if n_units else None,
         "n_channels": n_ch,
         "sampling_frequency": rec.get_sampling_frequency(),
         "t_start": float(to_time(0)),
         "duration_s": dur,
+        "recorded_s": recorded,
         "spike_times": "samples of the ephys-prep recording (sorting/); seconds = recording times at those samples",
         "wall_seconds": round(wall, 1),
-        "realtime_factor": round(wall / dur, 2) if dur else None,
+        "realtime_factor": round(wall / recorded, 2) if recorded else None,
         "gpu": ({"name": gpu.get("name"), "total_vram_mb": gpu.get("total_vram_mb"), "peak_vram_mb": peak_vram} if gpu else None),
         "recording": _rel(item["recording"], input_dir),
         "kilosort_motion_saved": motion_ks,
@@ -322,7 +325,7 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
     }
     C.write_json(sdir / "sort.json", sort_json)
     log.info("session %s: %s found %d units (%d before removing empty ones), %d spikes, in %.0f s (%.2f x real time)%s", sid, sorter, n_units,
-             n_raw, sort_json["n_spikes"], wall, wall / dur if dur else 0, f", peak VRAM {peak_vram} MB" if peak_vram else "")
+             n_raw, sort_json["n_spikes"], wall, wall / recorded if recorded else 0, f", peak VRAM {peak_vram} MB" if peak_vram else "")
     return {"sort": sort_json, "figures": figs, "stats": stats}
 
 
@@ -457,12 +460,13 @@ def main() -> int:
             return {"status": r["status"], "error": r.get("error")}
         s = r["sort"]
         h = {"status": "ok", "sorter": s["sorter"], "sorter_version": s["sorter_version"], "n_units": s["n_units"], "n_spikes": s["n_spikes"],
-                "median_firing_rate_hz": s["median_firing_rate_hz"], "duration_s": s["duration_s"], "wall_seconds": s["wall_seconds"],
+                "median_firing_rate_hz": s["median_firing_rate_hz"], "duration_s": s["duration_s"], "recorded_s": s["recorded_s"], "wall_seconds": s["wall_seconds"],
                 "realtime_factor": s["realtime_factor"], "drift_correction_by_sorter": s["drift_correction"]["by_sorter"],
                 "drift_interpolated": s["drift_correction"]["interpolated_with_ephys_prep_motion"], "drift_decision": s["drift_correction"]["reason"],
                 "gpu": (s["gpu"] or {}).get("name"), "peak_vram_mb": (s["gpu"] or {}).get("peak_vram_mb"), **r.get("stats", {}),
                 }
-        h.update({k: v for k, v in s.get("sheet", {}).items() if k not in h})   # sheet columns never overwrite measured values
+        if s.get("sheet"):
+            h["sheet"] = s["sheet"]                 # the session sheet's columns, kept apart from measured values
         return h
 
     C.write_json(out_root / "summary.json", {

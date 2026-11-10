@@ -209,3 +209,48 @@ def test_fileshm_roundtrip(tmp_path, monkeypatch):
     a.close()
     a.unlink()
     assert not list((tmp_path / "shm").iterdir())
+
+
+def test_pause_rates_use_recorded_time(monkeypatch, fixture_dir, tmp_path):
+    """A recording whose session-clock times carry a 12 s pause: duration_s is the span (42 s), recorded_s the 30 s
+    recorded; rates and the real-time factor use recorded_s. Sheet columns stay under 'sheet' in summary.json."""
+    import shutil
+
+    from spikeinterface.core import load
+
+    src = fixture_dir / "input" / "ephys-prep" / "sub-fixture_ses-01"
+    dst = tmp_path / "in" / "ephys-prep" / "sub-fixture_ses-01"
+    shutil.copytree(src, dst)
+    rec = load(dst / "recording")
+    n, fs = rec.get_num_samples(), rec.get_sampling_frequency()
+    t = 100.0 + np.arange(n) / fs
+    t[n // 2:] += 12.0
+    t.astype("<f8").tofile(dst / "recording" / "times_cached_seg0.raw")
+    b = json.loads((dst / "recording" / "binary.json").read_text())
+    b["kwargs"]["file_timestamps_paths"] = ["times_cached_seg0.raw"]
+    b["kwargs"]["t_starts"] = None
+    (dst / "recording" / "binary.json").write_text(json.dumps(b))
+    meta = json.loads((dst / "session.json").read_text())
+    meta["sheet"] = {"subject_id": "fix01", "t_start": "999", "probe": "Probe01"}
+    (dst / "session.json").write_text(json.dumps(meta))
+    assert run(monkeypatch, tmp_path / "in", tmp_path / "out", SORTER="lupin") == 0
+    top = tmp_path / "out" / "sorting" / "spike-sort"
+    sort = json.loads((top / "sub-fixture_ses-01" / "sort.json").read_text())
+    assert sort["duration_s"] == pytest.approx(42.0, abs=1e-3) and sort["recorded_s"] == pytest.approx(30.0, abs=1e-3)
+    assert sort["realtime_factor"] == pytest.approx(round(sort["wall_seconds"] / 30.0, 2), abs=0.011)
+    gt = np.load(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz")
+    assert sort["median_firing_rate_hz"] == pytest.approx(np.median(np.bincount(gt["unit_index"])) / 30.0, rel=0.25)
+    h = json.loads((top / "summary.json").read_text())["sessions"]["sub-fixture_ses-01"]
+    assert h["sheet"] == {"subject_id": "fix01", "t_start": "999", "probe": "Probe01"} and "subject_id" not in h and "probe" not in h
+
+
+def test_fileshm_sweep_at_exit(tmp_path):
+    """Segments a process created and never unlinked (a crash) are removed when it exits."""
+    import subprocess
+    import sys
+
+    code = ("from processor import fileshm; fileshm.install(); from multiprocessing.shared_memory import SharedMemory; "
+            "s = SharedMemory(create=True, size=1024); import os; print(os.listdir(fileshm._dir()))")
+    r = subprocess.run([sys.executable, "-c", code], env=dict(__import__("os").environ, TMPDIR=str(tmp_path)), capture_output=True, text=True)
+    assert r.returncode == 0 and "si_" in r.stdout
+    assert not list((tmp_path / "shm").iterdir())
