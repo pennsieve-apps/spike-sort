@@ -84,7 +84,9 @@ the dev compute node*.
 unless `sharedMemorySize` is set) and Lambda has none, so Lupin and SpykingCircus2 crashed on real Neuropixels data
 (SIGBUS, BrokenProcessPool). The app replaces `multiprocessing.shared_memory.SharedMemory` with a file-backed
 equivalent in `$TMPDIR/shm` (`processor/fileshm.py`, installed in the main process and in every spawned worker
-by `processor/entry.py`) and also turns shared memory off in SpykingCircus2's matching. Kilosort4 uses no
+by `processor/entry.py`) and also turns shared memory off in SpykingCircus2's matching. Without `/dev/shm` at all
+(Lambda, `--ipc none`) Python cannot create the semaphores worker processes need, so SpikeInterface then runs on
+threads, and Lupin's cluster split / merge steps (which always open a process pool) run in-process. Kilosort4 uses no
 multiprocessing or shared memory (single process; PyTorch on the GPU); to be confirmed on the GPU node with the
 default 64 MB `/dev/shm`.
 
@@ -160,9 +162,11 @@ over all 534 IBL units active in the window, 106 match at ≥ 0.8 and 183 at ≥
 Measured on an M-series Mac (CPU only). **Native arm64, Lupin, 6 workers**: the IBL 10 min probe took **33 min**
 (3.3 × real time; peak 4.3-4.5 GB in the largest process); 120 s took 19 min;
 the ground-truth file (120 channels, 60 s) 3.7 min. **Docker, linux/amd64 under emulation** (5-10 × slower):
-30 s of the IBL probe (ephys-prep output) in the Lambda-style read-only container (uid 65534, default 64 MB
-`/dev/shm`, 2 CPUs, 4 GB) sorted with Lupin in 8 min (432 units; 3.3 GB peak; the app used 1 worker, since each
-Lupin worker needs ~2 GB and the main process ~2.4 GB: 2 workers under 4 GB were killed by the cgroup OOM); the
+30 s of the IBL probe (ephys-prep output) in the Lambda-style read-only container (uid 65534, 2 CPUs, 4 GB) sorted
+with Lupin with the default 64 MB `/dev/shm` (6 min, 429 units, 3.7 GB peak) and with no `/dev/shm` at all
+(`--ipc none`, as on Lambda: threads instead of processes, 7 min, 444 units, 3.5 GB peak). The app used 1 worker:
+each Lupin worker (or thread) needs ~2 GB and the main process ~2.4 GB, and 2 under 4 GB were killed by the cgroup
+OOM. Lupin's unit count varies by a few percent between runs (not bit-reproducible with several workers); the
 fixture (64 channels, 20 s) took 14 min with 2.0 GB peak; the gpu image without a GPU exits 3 within seconds (1.4 GB peak at import). Images: cpu 1.9 GB, gpu 11.3 GB
 (uncompressed; CUDA 12.6 runtime wheels).
 
