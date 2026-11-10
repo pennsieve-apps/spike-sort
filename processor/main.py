@@ -419,7 +419,7 @@ def main() -> int:
 
     # spawn: worker processes start clean (forking after torch / OpenMP has run, e.g. in the sorter's own drift
     # correction, can crash or hang); the recordings are folders on disk, so workers re-open them cheaply.
-    job_kwargs = {"n_jobs": C.worker_count(threads), "chunk_duration": "1s", "progress_bar": False, "mp_context": "spawn"}
+    job_kwargs = C.job_kwargs_for(threads)
     sc.set_global_job_kwargs(**job_kwargs)
     logging.getLogger("kilosort").setLevel(logging.INFO)
     logging.getLogger("kilosort").propagate = False     # Kilosort4 prints its progress with its own handler
@@ -431,7 +431,9 @@ def main() -> int:
         log.error("no ephys-prep sessions (<session_id>/session.json + recording/) or SpikeInterface recording folders under %s", input_dir)
         return 1
     log.info("found %d session(s): %s", len(items), ", ".join(i["session_id"] for i in items))
-    out_root = output_dir / APP
+    # Two output ports (conventions.md): `sorting` (the data, plus the small files) and `qc` (only the small files:
+    # session / sort json, figures, summary, provenance), so the report can be linked without the data.
+    out_root = output_dir / "sorting" / APP
     out_root.mkdir(parents=True, exist_ok=True)
     results, figures, warnings = {}, [], []
     for it in items:
@@ -486,5 +488,6 @@ def main() -> int:
                      for sid, r in results.items()},
         "citations": [CITATIONS["spikeinterface"]] + SORTER_DOIS[p["SORTER"]] + [CITATIONS["aind_pipeline"]],
     })
+    C.copy_small_files(out_root, output_dir / "qc" / APP)
     log.info("%s done: %d of %d sessions ok in %.0f s, peak RSS %s MB", APP, len(ok), len(results), time.monotonic() - t0, C.peak_rss_mb())
     return 0 if ok else 1

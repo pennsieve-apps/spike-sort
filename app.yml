@@ -103,6 +103,7 @@ inputs:
 outputs:
   - name: sorting
     description: >-
+      Written to OUTPUT_DIR/sorting/spike-sort/.
       spike-sort/<session_id>/sorting/ (SpikeInterface numpy_folder; spike times in samples of the
       ephys-prep recording), spike-sort/<session_id>/sorter_output/ (the sorter's own output;
       Kilosort4: Phy-compatible, minus temporary files), spike-sort/<session_id>/sort.json (sorter,
@@ -111,6 +112,14 @@ outputs:
       Motion), <session_id>_units.png; spike-sort/summary.json, provenance.json.
     mediaTypes:
       - application/octet-stream
+      - application/json
+      - image/png
+  - name: qc
+    description: >-
+      The small files only, for linking into the report without the data (OUTPUT_DIR/qc/spike-sort/):
+      summary.json, provenance.json, and per session sort.json and the units figure (PNG). Same paths
+      as in the sorting port.
+    mediaTypes:
       - application/json
       - image/png
 variants:

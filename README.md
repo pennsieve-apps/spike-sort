@@ -93,7 +93,8 @@ default 64 MB `/dev/shm`.
 | Port | Kind | Files | Notes |
 |---|---|---|---|
 | `recording` | input | `ephys-prep/<session_id>/{session.json, recording/}` | Found anywhere below (symlinks followed); every session is sorted. |
-| `sorting` | output | `spike-sort/...` (below) | The only output: the whole of `OUTPUT_DIR`. |
+| `sorting` | output | `OUTPUT_DIR/sorting/spike-sort/...` (below) | The data and the small files. |
+| `qc` | output | `OUTPUT_DIR/qc/spike-sort/`: `summary.json`, `provenance.json`, `<session_id>/sort.json` and `<session_id>_units.png` | Only the small files, at the same relative paths, so the report (a Lambda step) can be linked without the data. |
 
 ## Parameters
 
@@ -114,7 +115,7 @@ default 64 MB `/dev/shm`.
 Exit codes: 0 ok; 1 no input or every session failed; 2 bad parameters; **3 Kilosort4 requested but no GPU (or
 the cpu image)**.
 
-## Outputs (`OUTPUT_DIR/spike-sort/`)
+## Outputs (`OUTPUT_DIR/sorting/spike-sort/`; the small files also in `OUTPUT_DIR/qc/spike-sort/`)
 
 | File | Contents |
 |---|---|

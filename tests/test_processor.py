@@ -98,7 +98,7 @@ def lupin_run(fixture_dir, tmp_path_factory) -> Path:
 
 
 def test_lupin_outputs(lupin_run):
-    top = lupin_run / "spike-sort"
+    top = lupin_run / "sorting" / "spike-sort"
     sdir = top / "sub-fixture_ses-01"
     for f in ("sorting/si_folder.json", "sort.json", "sub-fixture_ses-01_units.png"):
         assert (sdir / f).exists(), f
@@ -111,12 +111,15 @@ def test_lupin_outputs(lupin_run):
     assert set(prov) >= {"app", "version", "variant", "tools", "parameters", "inputs", "started", "finished", "wall_seconds",
                          "peak_rss_mb", "gpu", "sessions", "citations"}
     summ = json.loads((top / "summary.json").read_text())
+    qc = top.parent.parent / "qc" / "spike-sort"
+    assert (qc / "sub-fixture_ses-01" / "sort.json").exists() and not (qc / "sub-fixture_ses-01" / "sorting").exists()
+    assert all((qc / f["path"]).exists() for f in summ["figures"])
     assert summ["sessions"]["sub-fixture_ses-01"]["n_units"] == sort["n_units"]
     assert summ["figures"][0]["caption"]
 
 
 def test_lupin_recovers_planted_units(lupin_run, fixture_dir):
-    acc = accuracy(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz", lupin_run / "spike-sort" / "sub-fixture_ses-01" / "sorting")
+    acc = accuracy(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz", lupin_run / "sorting" / "spike-sort" / "sub-fixture_ses-01" / "sorting")
     assert (acc >= 0.9).sum() >= 10, acc
 
 
@@ -133,7 +136,7 @@ def test_lupin_on_spikeinterface_ground_truth(monkeypatch, tmp_path):
     folder = tmp_path / "in" / "gt_session" / "recording"
     rec.save(folder=folder, format="binary", dtype="float32", n_jobs=1)
     assert run(monkeypatch, tmp_path / "in", tmp_path / "out", SORTER="lupin") == 0
-    sorting = sc.load(tmp_path / "out" / "spike-sort" / "gt_session" / "sorting")
+    sorting = sc.load(tmp_path / "out" / "sorting" / "spike-sort" / "gt_session" / "sorting")
     acc = scmp.compare_sorter_to_ground_truth(gt, sorting, exhaustive_gt=True).get_performance()["accuracy"].to_numpy()
     assert (acc >= 0.8).sum() >= 12, acc          # most units, with high accuracy
 
@@ -143,7 +146,7 @@ def test_kilosort4_on_cpu_for_testing(monkeypatch, fixture_dir, tmp_path):
     """The Kilosort4 code path, on CPU (ALLOW_CPU_KILOSORT=1, developer only): outputs and accuracy."""
     monkeypatch.setenv("ALLOW_CPU_KILOSORT", "1")
     assert run(monkeypatch, fixture_dir / "input", tmp_path, SORTER="kilosort4") == 0
-    sdir = tmp_path / "spike-sort" / "sub-fixture_ses-01"
+    sdir = tmp_path / "sorting" / "spike-sort" / "sub-fixture_ses-01"
     for f in ("spike_times.npy", "spike_clusters.npy", "templates.npy", "params.py", "cluster_KSLabel.tsv"):
         assert (sdir / "sorter_output" / f).exists(), f
     assert not (sdir / "sorter_output" / "temp_wh.dat").exists()
@@ -170,7 +173,7 @@ def test_lupin_interpolates_with_ephys_prep_motion(monkeypatch, fixture_dir, tmp
     meta["motion_estimated"] = True
     (dst / "session.json").write_text(json.dumps(meta))
     assert run(monkeypatch, tmp_path / "in", tmp_path / "out", SORTER="lupin", MOTION_THRESHOLD_UM="5") == 0
-    sdir = tmp_path / "out" / "spike-sort" / "sub-fixture_ses-01"
+    sdir = tmp_path / "out" / "sorting" / "spike-sort" / "sub-fixture_ses-01"
     sort = json.loads((sdir / "sort.json").read_text())
     assert sort["drift_correction"]["interpolated_with_ephys_prep_motion"] is True and sort["drift_correction"]["by_sorter"] is False
     acc = accuracy(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz", sdir / "sorting")
@@ -189,7 +192,7 @@ def test_entry_without_dev_shm(fixture_dir, tmp_path):
     r = subprocess.run([sys.executable, "-m", "processor.entry"], env=env, capture_output=True, text=True, timeout=1800)
     assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
     assert (tmp_path / "tmp" / "shm").is_dir() and not list((tmp_path / "tmp" / "shm").iterdir())   # used, and cleaned up
-    summ = json.loads((tmp_path / "out" / "spike-sort" / "summary.json").read_text())
+    summ = json.loads((tmp_path / "out" / "sorting" / "spike-sort" / "summary.json").read_text())
     assert summ["sessions"]["sub-fixture_ses-01"]["n_units"] >= 10
 
 
