@@ -133,8 +133,12 @@ variants:
       args:
         TORCH_FLAVOUR: cuda
     runtime:
+      # Sized for the platform's small GPU tier (g4dn.xlarge: 4 vCPU, 16 GiB, T4): Kilosort4 is
+      # GPU-bound, and a 10-min Neuropixels probe fits. Recordings of an hour or more may need a
+      # node with a larger GPU tier (more host memory).
       computeTypes: [gpu]
-      memory: 30720
+      cpu: 4096
+      memory: 15360
       timeoutSeconds: 21600
     parameters:
       SORTER:
