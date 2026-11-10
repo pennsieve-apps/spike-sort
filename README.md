@@ -146,18 +146,18 @@ across machines: an independent rerun on another machine gave 190 units and 39 o
 realistic cortex most neurons are small, sparse or overlapping and no sorter recovers them; sorted units are
 biased towards large, active neurons. Kilosort4 on the same data: to be measured on the dev compute node.
 
-**IBL, `sub-NR-0031_ses-caa5dddc`, Probe01** (10 min, NP 1.0, ephys-prep defaults; drift 8.9 µm, below the threshold, so not
-interpolated): **Lupin (cpu) found 686 units** (2.72 M spikes, median 2.7 Hz) in the workflow repo's
+**IBL, `sub-NR-0031_ses-caa5dddc`, Probe01** (10 min, NP 1.0, ephys-prep defaults; drift 8.4 µm, below the threshold, so not
+interpolated): **Lupin (cpu) found 671 units** (2.71 M spikes, median 2.6 Hz) in the workflow repo's
 `data/work/ibl/spike-sort/`. Against IBL's own sorting of the same probe and window (processed NWB units table,
-`scripts/compare_reference.py`, 0.4 ms matching): **48 of IBL's 70 best units** (`ibl_quality_score` = 1, ≥ 10 spikes in the window; 83 have ≥ 1) have a
-Lupin unit with agreement ≥ 0.8 (55 with ≥ 0.5, median agreement 0.97); over all 534 IBL units active in the
-window, 105 match at ≥ 0.8 and 178 at ≥ 0.5. IBL's sorting is itself a (pyKilosort) sorting, not ground truth.
-Kilosort4 (gpu) on the same data: to be measured on the dev compute node.
+units with ≥ 10 spikes in the window, `scripts/compare_reference.py`, 0.4 ms matching): **49 of IBL's 70 best
+units** (`ibl_quality_score` = 1) have a Lupin unit with agreement ≥ 0.8 (56 with ≥ 0.5, median agreement 0.98);
+over all 534 IBL units active in the window, 106 match at ≥ 0.8 and 183 at ≥ 0.5. IBL's sorting is itself a
+(pyKilosort) sorting, not ground truth. Kilosort4 (gpu) on the same data: to be measured on the dev compute node.
 
 ## Runtime
 
-Measured on an M-series Mac (CPU only). **Native arm64, Lupin, 6 workers**: the IBL 10 min probe took **47 min**
-(4.7 × real time; peak 3.2 GB in the main process, 4.3 GB with its workers per `time -l`); 120 s took 19 min;
+Measured on an M-series Mac (CPU only). **Native arm64, Lupin, 6 workers**: the IBL 10 min probe took **33 min**
+(3.3 × real time; peak 4.3-4.5 GB in the largest process); 120 s took 19 min;
 the ground-truth file (120 channels, 60 s) 3.7 min. **Docker, linux/amd64 under emulation** (5-10 × slower):
 the fixture (64 channels, 20 s) in the Lambda-style read-only container (2 CPUs, 4 GB) took 14 min with 2.0 GB
 peak; the gpu image without a GPU exits 3 within seconds (1.4 GB peak at import). Images: cpu 1.9 GB, gpu 11.3 GB
