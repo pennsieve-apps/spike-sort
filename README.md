@@ -159,8 +159,10 @@ over all 534 IBL units active in the window, 106 match at ≥ 0.8 and 183 at ≥
 Measured on an M-series Mac (CPU only). **Native arm64, Lupin, 6 workers**: the IBL 10 min probe took **33 min**
 (3.3 × real time; peak 4.3-4.5 GB in the largest process); 120 s took 19 min;
 the ground-truth file (120 channels, 60 s) 3.7 min. **Docker, linux/amd64 under emulation** (5-10 × slower):
-the fixture (64 channels, 20 s) in the Lambda-style read-only container (2 CPUs, 4 GB) took 14 min with 2.0 GB
-peak; the gpu image without a GPU exits 3 within seconds (1.4 GB peak at import). Images: cpu 1.9 GB, gpu 11.3 GB
+30 s of the IBL probe (ephys-prep output) in the Lambda-style read-only container (uid 65534, default 64 MB
+`/dev/shm`, 2 CPUs, 4 GB) sorted with Lupin in 8 min (432 units; 3.3 GB peak; the app used 1 worker, since each
+Lupin worker needs ~2 GB and the main process ~2.4 GB: 2 workers under 4 GB were killed by the cgroup OOM); the
+fixture (64 channels, 20 s) took 14 min with 2.0 GB peak; the gpu image without a GPU exits 3 within seconds (1.4 GB peak at import). Images: cpu 1.9 GB, gpu 11.3 GB
 (uncompressed; CUDA 12.6 runtime wheels).
 
 Chosen: **cpu variant 8 vCPU, 16 GB**, timeout 12 h (Lupin ~3-5 × real time on 8 vCPU: ~3-5 h per

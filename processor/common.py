@@ -179,13 +179,12 @@ def walk(root: Path):
         yield Path(dirpath), dirnames, sorted(f for f in filenames if not f.startswith("."))
 
 
-def worker_count(threads: int, per_worker_mb: float = 1200.0, reserve_mb: float = 1536.0) -> int:
+def worker_count(threads: int, per_worker_mb: float = 2200.0, reserve_mb: float = 2560.0) -> int:
     """Parallel workers: THREADS, but no more than the container's memory allows.
 
-    Each spawned SpikeInterface worker imports the stack (SpikeInterface, PyTorch: ~350 MB) and holds a few 1 s
-    chunks of the recording (384 channels: ~50 MB each, float32, several copies in a filter chain), measured at
-    up to ~1.2 GB in peak detection + localisation (measured under a 4 GB limit: 3 workers + main went out of
-    memory on a 384-channel probe); the main process keeps ~1-1.5 GB (peaks, timestamps, motion).
+    Measured for Lupin on a 384-channel Neuropixels probe: ~2 GB per spawned worker in template matching
+    (circus-omp: the stack, 1 s chunks, the template overlaps) and ~2.4 GB in the main process (peaks, clusters,
+    templates); 2 workers under a 4 GB limit were killed by the cgroup OOM, 1 worker fits.
     """
     limit = cgroup_memory_limit_mb()
     if not limit:
