@@ -1,0 +1,4 @@
+# cpu variant (docker build --build-arg TORCH_FLAVOUR=cpu): CPU-only PyTorch, needed by Lupin
+# (SpikeInterface's sorter) and DREDge; no Kilosort4, no NVIDIA libraries.
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.14.1+cpu
