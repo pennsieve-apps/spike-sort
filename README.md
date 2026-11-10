@@ -141,7 +141,7 @@ spikes for 1403 planted. **SpikeInterface ground truth** (`generate_ground_truth
 
 **Ground truth, DANDI:001250** (`sub-demo-npx-bio-evoked`, a biophysically detailed simulation of a Neuropixels
 1.0 shank in rat cortex, 120 channels, 20 kHz, 60 s, 1836 simulated neurons of which 788 fire ≥ 10 spikes; ephys-prep
-with `BAD_CHANNELS=dead-noisy`, then Lupin, cpu; `scripts/score_ground_truth.py`; drift 0.2 µm, so nothing is interpolated): Lupin found 180 units;
+with `BAD_CHANNELS=dead-noisy`, then Lupin, cpu; `scripts/score_ground_truth.py`; drift 0.1 µm, so nothing is interpolated): Lupin found 180 units;
 **36 of the 788 ground-truth neurons are recovered with accuracy ≥ 0.8** (52 with ≥ 0.5; median accuracy of the
 matched ones 0.96). Recovery rises with activity: 10 of 347 neurons with 10-49 spikes, 5 of 191 with 50-99, 20 of
 243 with 100-299 and 1 of 7 with ≥ 300 spikes (21 of the 250 with ≥ 100 spikes). Lupin is not bit-reproducible
