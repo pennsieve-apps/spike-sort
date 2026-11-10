@@ -135,6 +135,8 @@ def sorter_params(sorter: str, p: dict, drift_on: bool, seed: int) -> dict:
         k = deepcopy(SC2_AIND)
         k["apply_motion_correction"] = drift_on
         k["seed"] = seed
+        # no POSIX shared memory (/dev/shm is 64 MB in containers, absent on Lambda); see processor/fileshm.py
+        k["matching"] = {"method": "circus-omp", "method_kwargs": {"shared_memory": False}, "pipeline_kwargs": {}}
         k["detection"] = {"method": "matched_filtering", "method_kwargs": {"peak_sign": "neg", "detect_threshold": p["DETECT_THRESHOLD"]},
                           "pipeline_kwargs": {}}
         return k

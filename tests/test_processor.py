@@ -175,3 +175,34 @@ def test_lupin_interpolates_with_ephys_prep_motion(monkeypatch, fixture_dir, tmp
     assert sort["drift_correction"]["interpolated_with_ephys_prep_motion"] is True and sort["drift_correction"]["by_sorter"] is False
     acc = accuracy(fixture_dir / "ground_truth" / "sub-fixture_ses-01_gt.npz", sdir / "sorting")
     assert (acc >= 0.85).sum() >= 10, acc
+
+
+def test_entry_without_dev_shm(fixture_dir, tmp_path):
+    """The container entry point, with SpikeInterface's shared memory backed by files in $TMPDIR (no /dev/shm):
+    Lupin's template matching and template estimation run in 2 spawned worker processes."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, INPUT_DIR=str(fixture_dir / "input"), OUTPUT_DIR=str(tmp_path / "out"), TMPDIR=str(tmp_path / "tmp"),
+               HOME=str(tmp_path / "home"), SORTER="lupin", THREADS="2")
+    r = subprocess.run([sys.executable, "-m", "processor.entry"], env=env, capture_output=True, text=True, timeout=1800)
+    assert r.returncode == 0, r.stdout[-3000:] + r.stderr[-3000:]
+    assert (tmp_path / "tmp" / "shm").is_dir() and not list((tmp_path / "tmp" / "shm").iterdir())   # used, and cleaned up
+    summ = json.loads((tmp_path / "out" / "spike-sort" / "summary.json").read_text())
+    assert summ["sessions"]["sub-fixture_ses-01"]["n_units"] >= 10
+
+
+def test_fileshm_roundtrip(tmp_path, monkeypatch):
+    from processor import fileshm
+
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.setattr(fileshm, "_DIR", None)
+    a = fileshm.FileSharedMemory(create=True, size=64)
+    b = fileshm.FileSharedMemory(a.name)
+    np.ndarray((8,), "float64", buffer=a.buf)[:] = 3.0
+    assert np.ndarray((8,), "float64", buffer=b.buf)[0] == 3.0
+    b.close()
+    a.close()
+    a.unlink()
+    assert not list((tmp_path / "shm").iterdir())

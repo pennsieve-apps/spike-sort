@@ -57,7 +57,14 @@ class ParameterError(ValueError):
 
 
 def image_flavour() -> str:
-    return os.environ.get("TORCH_FLAVOUR", "cuda" if _has("kilosort") else "cpu")
+    """The variant the image was built for (Dockerfile ARG TORCH_FLAVOUR, kept as an env var): cuda or cpu.
+    Outside an image (tests, a dev venv): from what is installed."""
+    return os.environ.get("TORCH_FLAVOUR") or ("cuda" if _has("kilosort") else "cpu")
+
+
+def variant_name() -> str:
+    flavour = os.environ.get("TORCH_FLAVOUR")
+    return {"cuda": "gpu", "cpu": "cpu"}.get(flavour or "", f"none (not an image build; {image_flavour()} environment)")
 
 
 def _has(mod: str) -> bool:
@@ -284,7 +291,8 @@ def sort_session(item: dict, p: dict, out_root: Path, input_dir: Path, job_kwarg
         sorter_version = ss.sorter_dict[sorter].get_sorter_version()
     except Exception:   # noqa: BLE001
         sorter_version = "unknown"
-    dur = rec.get_total_duration()
+    # duration on the session clock (the timestamps when the recording has them), not samples / nominal rate
+    dur = float(to_time(rec.get_num_samples() - 1) - to_time(0)) + 1.0 / rec.get_sampling_frequency()
     sort_json = {
         "session_id": sid,
         "sorter": sorter,
@@ -446,12 +454,14 @@ def main() -> int:
         if r["status"] != "ok":
             return {"status": r["status"], "error": r.get("error")}
         s = r["sort"]
-        return {"status": "ok", "sorter": s["sorter"], "sorter_version": s["sorter_version"], "n_units": s["n_units"], "n_spikes": s["n_spikes"],
+        h = {"status": "ok", "sorter": s["sorter"], "sorter_version": s["sorter_version"], "n_units": s["n_units"], "n_spikes": s["n_spikes"],
                 "median_firing_rate_hz": s["median_firing_rate_hz"], "duration_s": s["duration_s"], "wall_seconds": s["wall_seconds"],
                 "realtime_factor": s["realtime_factor"], "drift_correction_by_sorter": s["drift_correction"]["by_sorter"],
                 "drift_interpolated": s["drift_correction"]["interpolated_with_ephys_prep_motion"], "drift_decision": s["drift_correction"]["reason"],
                 "gpu": (s["gpu"] or {}).get("name"), "peak_vram_mb": (s["gpu"] or {}).get("peak_vram_mb"), **r.get("stats", {}),
-                **s.get("sheet", {})}
+                }
+        h.update({k: v for k, v in s.get("sheet", {}).items() if k not in h})   # sheet columns never overwrite measured values
+        return h
 
     C.write_json(out_root / "summary.json", {
         "app": APP, "version": app_version(),
@@ -464,7 +474,7 @@ def main() -> int:
     peak_vram = max([r["sort"]["gpu"]["peak_vram_mb"] or 0 for r in results.values() if r["status"] == "ok" and r["sort"]["gpu"]] or [0])
     finished = datetime.now(timezone.utc)
     C.write_json(out_root / "provenance.json", {
-        "app": APP, "version": app_version(), "variant": "gpu" if image_flavour() == "cuda" else "cpu",
+        "app": APP, "version": app_version(), "variant": variant_name(),
         "tools": tool_versions(),
         "parameters": p,
         "inputs": sorted(_rel(i["session_json"] or i["recording"], input_dir) for i in items),

@@ -21,7 +21,7 @@ nvidia-cusolver-cu12==11.7.1.2
 nvidia-cusparse-cu12==12.5.4.2
 nvidia-cusparselt-cu12==0.7.1
 nvidia-nccl-cu12==2.29.3
-nvidia-nvjitlink-cu12==12.9.86
+nvidia-nvjitlink-cu12==12.6.85  # torch allows >=12.6.85,<13; matched to the CUDA 12.6 toolkit (driver 550)
 nvidia-nvshmem-cu12==3.4.5
 nvidia-nvtx-cu12==12.6.77
 psutil==7.2.2
