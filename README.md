@@ -171,8 +171,9 @@ fixture (64 channels, 20 s) took 14 min with 2.0 GB peak; the gpu image without 
 (uncompressed; CUDA 12.6 runtime wheels).
 
 Chosen: **cpu variant 8 vCPU, 16 GB**, timeout 12 h (Lupin ~3-5 × real time on 8 vCPU: ~3-5 h per
-probe-hour, est.); **gpu variant**: T4, 30 GB host memory (Kilosort4 asks for 32 GB+ for long recordings), timeout
-6 h. GPU wall time and VRAM: to be measured on the dev compute node. Not a Lambda step (no GPU, > 15 min).
+probe-hour, est.); **gpu variant**: T4, 4 vCPU and 15 GB host memory, the platform's small GPU tier (g4dn.xlarge), timeout
+6 h. Kilosort4 is GPU-bound and a 10-min probe fits; Kilosort4's documentation asks for 32 GB+ host memory
+for long recordings, so sort recordings of an hour or more on a node with a larger GPU tier. GPU wall time and VRAM: to be measured on the dev compute node. Not a Lambda step (no GPU, > 15 min).
 
 ## Limitations
 
