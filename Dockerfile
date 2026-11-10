@@ -3,6 +3,12 @@ FROM python:3.12.16-slim-bookworm@sha256:623674a14ef93d052bb9b0de4dbf5f28eb578a3
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# procps: Kilosort4 runs `ps -o thcount <pid>` on Linux to log its thread count (kilosort/utils.py
+# log_thread_count) and fails without it; the slim base image has no ps.
+RUN apt-get update && apt-get install -y --no-install-recommends procps \
+    && rm -rf /var/lib/apt/lists/* \
+    && ps -o thcount 1 >/dev/null
+
 WORKDIR /processor
 
 # cpu (default for a builder that passes no build argument) or cuda; app.yml's variants set it.
