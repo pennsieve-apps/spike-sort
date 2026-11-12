@@ -1,5 +1,6 @@
 cff-version: 1.2.0
-message: If you use this app, please cite it and the works it builds on, listed under references.
+message: >-
+  If you use this app, please cite the work it implements (preferred-citation), this release, and Pennsieve (RRID:SCR_021677); the other works it builds on are listed under references.
 type: software
 title: spike-sort
 abstract: 'Spike sorting of preprocessed extracellular recordings with SpikeInterface: Kilosort4 on an NVIDIA GPU (default)
@@ -22,6 +23,33 @@ keywords:
 - kilosort
 - spikeinterface
 - gpu
+# The work this app implements; the release report's "How to cite" puts it first.
+preferred-citation:
+  type: article
+  title: Spike sorting with Kilosort4
+  authors:
+  - family-names: Pachitariu
+    given-names: Marius
+    orcid: https://orcid.org/0000-0001-7106-814X
+  - family-names: Sridhar
+    given-names: Shashwat
+    orcid: https://orcid.org/0000-0002-8837-8555
+  - family-names: Pennington
+    given-names: Jacob
+  - family-names: Stringer
+    given-names: Carsen
+    orcid: https://orcid.org/0000-0002-9229-4100
+  year: 2024
+  journal: Nature Methods
+  volume: '21'
+  issue: '5'
+  start: '914'
+  end: '921'
+  doi: 10.1038/s41592-024-02232-7
+  identifiers:
+  - type: other
+    value: '38589517'
+    description: PubMed ID
 references:
 - type: article
   title: Spike sorting with Kilosort4
